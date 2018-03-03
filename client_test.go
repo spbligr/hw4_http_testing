@@ -10,6 +10,7 @@ import (
 	_"fmt"
 	"strconv"
 	"io"
+	"time"
 )
 
 type xmlRow struct {
@@ -107,6 +108,37 @@ func SearchServerJsonFail(w http.ResponseWriter, r *http.Request)  {
 	io.WriteString(w, `"err": "bad json"}`)
 }
 
+func SearchServerTimeoutError(w http.ResponseWriter, r *http.Request)  {
+	time.Sleep(time.Second * 2)
+	w.WriteHeader(http.StatusOK)
+}
+
+func SearchServerUnknownError(w http.ResponseWriter, r *http.Request)  {}
+
+func SearchServerUnauthorized(w http.ResponseWriter, r *http.Request)  {
+	w.WriteHeader(http.StatusUnauthorized)
+}
+
+func SearchServerInternalServerError(w http.ResponseWriter, r *http.Request)  {
+	w.WriteHeader(http.StatusInternalServerError)
+}
+
+func SearchServerBadRequest(w http.ResponseWriter, r *http.Request)  {
+	w.WriteHeader(http.StatusBadRequest)
+}
+
+func SearchServerBadField(w http.ResponseWriter, r *http.Request)  {
+	w.WriteHeader(http.StatusBadRequest)
+	jsonResponse, _ := json.Marshal(SearchErrorResponse{Error:"ErrorBadOrderField"})
+	w.Write(jsonResponse)
+}
+
+func SearchServerBadError(w http.ResponseWriter, r *http.Request)  {
+	w.WriteHeader(http.StatusBadRequest)
+	jsonResponse, _ := json.Marshal(SearchErrorResponse{Error:"Unknown error"})
+	w.Write(jsonResponse)
+}
+
 
 func TestErrorResponse(t *testing.T) {
 
@@ -144,8 +176,6 @@ func TestErrorResponse(t *testing.T) {
 	ts.Close()
 }
 
-
-
 func TestLimitFailed(t *testing.T)  {
 	limit := 7
 	ts := httptest.NewServer(http.HandlerFunc(SearchServerLimitFail))
@@ -172,8 +202,111 @@ func TestBadJson(t *testing.T)  {
 	if err.Error() != `cant unpack result json: invalid character ':' after top-level value` {
 		t.Error("Bad json test :(")
 	}
-
+	ts.Close()
 }
+
+func TestPerelimit(t *testing.T)  {
+	ts := httptest.NewServer(http.HandlerFunc(SearchServerSuccess))
+	searchClient := &SearchClient{
+		URL: ts.URL,
+	}
+
+	response, _ := searchClient.FindUsers(SearchRequest{Limit:26})
+
+	if 25 != len(response.Users) {
+		t.Error("Perelimit :(")
+	}
+	ts.Close()
+}
+
+func TestTimeoutError(t *testing.T)  {
+	ts := httptest.NewServer(http.HandlerFunc(SearchServerTimeoutError))
+	searchClient := &SearchClient{
+		URL: ts.URL,
+	}
+
+	_, err := searchClient.FindUsers(SearchRequest{})
+
+	if err == nil {
+		t.Error("Timeout chck error :(")
+	}
+
+	ts.Close()
+}
+
+func TestUnknownError(t *testing.T)  {
+	ts := httptest.NewServer(http.HandlerFunc(SearchServerUnknownError))
+	searchClient := &SearchClient{
+		URL: "bad_link",
+	}
+
+	_, err := searchClient.FindUsers(SearchRequest{})
+
+	if err == nil {
+		t.Error("TestUnknownError :(")
+	}
+
+	ts.Close()
+}
+
+func TestStatusUnauthorized(t *testing.T)  {
+	ts := httptest.NewServer(http.HandlerFunc(SearchServerUnauthorized))
+	searchClient := &SearchClient{ URL: ts.URL}
+	_, err := searchClient.FindUsers(SearchRequest{})
+
+	if err.Error() != "Bad AccessToken" {
+		t.Error("Bad AccessToken is not done :(")
+	}
+
+	ts.Close()
+}
+
+func TestStatusInternalServerError(t *testing.T)  {
+	ts := httptest.NewServer(http.HandlerFunc(SearchServerInternalServerError))
+	searchClient := &SearchClient{ URL: ts.URL}
+	_, err := searchClient.FindUsers(SearchRequest{})
+
+	if err.Error() != "SearchServer fatal error" {
+		t.Error("SearchServer fatal error is not done :(")
+	}
+
+	ts.Close()
+}
+
+func TestBadRequest(t *testing.T)  {
+	ts := httptest.NewServer(http.HandlerFunc(SearchServerBadRequest))
+	searchClient := &SearchClient{ URL: ts.URL}
+	_, err := searchClient.FindUsers(SearchRequest{})
+
+	if err.Error() != "cant unpack error json: unexpected end of JSON input" {
+		t.Error("TestBadRequest is not done")
+	}
+
+	ts.Close()
+}
+
+func TestBadField(t *testing.T)  {
+	ts := httptest.NewServer(http.HandlerFunc(SearchServerBadField))
+	searchClient := &SearchClient{ URL: ts.URL}
+	_, err := searchClient.FindUsers(SearchRequest{})
+	if err.Error() != "OrderFeld  invalid" {
+		t.Error("ErrorBadOrderField is not done")
+	}
+
+	ts.Close()
+}
+
+func TestBadRequestError(t *testing.T)  {
+	ts := httptest.NewServer(http.HandlerFunc(SearchServerBadError))
+	searchClient := &SearchClient{ URL: ts.URL}
+	_, err := searchClient.FindUsers(SearchRequest{})
+	if err == nil {
+		t.Error("TestBadRequestError is not done")
+	}
+
+	ts.Close()
+}
+
 
 func checkError(err error)  {
 	if err != nil {
