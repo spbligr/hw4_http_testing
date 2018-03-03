@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	_"fmt"
 	"strconv"
+	"io"
 )
 
 type xmlRow struct {
@@ -75,6 +76,37 @@ func SearchServerSuccess(w http.ResponseWriter, r *http.Request)  {
 	w.Write(jsonResponse)
 }
 
+func SearchServerLimitFail(w http.ResponseWriter, r *http.Request)  {
+	dataFile, err := ioutil.ReadFile("dataset.xml")
+	checkError(err)
+
+	usersXml := &xmlStructure{}
+	xml.Unmarshal(dataFile, &usersXml)
+
+	var users []User
+
+	for _, user := range usersXml.Row {
+		users = append(users, User{
+			Id: user.Id,
+			Name: user.FirstName,
+			Age: user.Age,
+			About: user.About,
+			Gender: user.Gender,
+		})
+	}
+
+	jsonResponse, err := json.Marshal(users)
+	checkError(err)
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(jsonResponse)
+}
+
+func SearchServerJsonFail(w http.ResponseWriter, r *http.Request)  {
+	w.WriteHeader(http.StatusOK)
+	io.WriteString(w, `"err": "bad json"}`)
+}
+
 
 func TestErrorResponse(t *testing.T) {
 
@@ -115,19 +147,30 @@ func TestErrorResponse(t *testing.T) {
 
 
 func TestLimitFailed(t *testing.T)  {
-	ts := httptest.NewServer(http.HandlerFunc(SearchServerSuccess))
+	limit := 7
+	ts := httptest.NewServer(http.HandlerFunc(SearchServerLimitFail))
 
 	searchClient := &SearchClient{
 		URL: ts.URL,
 	}
 
-	_, err := searchClient.FindUsers(SearchRequest{
-		Offset: 1,
-		Limit: 7,
-	})
+	response, _ := searchClient.FindUsers(SearchRequest{Limit: limit})
 
-	if err != nil {
-		t.Error(err.Error())
+	if limit == len(response.Users) {
+		t.Error("Limit not true")
+	}
+	ts.Close()
+}
+
+func TestBadJson(t *testing.T)  {
+	ts := httptest.NewServer(http.HandlerFunc(SearchServerJsonFail))
+	searchClient := &SearchClient{
+		URL: ts.URL,
+	}
+	_, err := searchClient.FindUsers(SearchRequest{})
+
+	if err.Error() != `cant unpack result json: invalid character ':' after top-level value` {
+		t.Error("Bad json test :(")
 	}
 
 }
