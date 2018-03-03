@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"encoding/xml"
 	"encoding/json"
+	_"fmt"
+	"strconv"
 )
 
 type xmlRow struct {
@@ -33,8 +35,10 @@ type xmlStructure struct {
 
 }
 
+const pageSize = 25
 
-func SearchServer(w http.ResponseWriter, r *http.Request)  {
+
+func SearchServerSuccess(w http.ResponseWriter, r *http.Request)  {
 	dataFile, err := ioutil.ReadFile("dataset.xml")
 	checkError(err)
 
@@ -53,13 +57,18 @@ func SearchServer(w http.ResponseWriter, r *http.Request)  {
 		})
 	}
 
+	offset, _ := strconv.Atoi(r.FormValue("offset"))
+	limit, _ := strconv.Atoi(r.FormValue("limit"))
 
-	response := &SearchResponse{
-		Users: users,
-		NextPage:false,
+	var startRow int
+	if offset > 0 {
+		startRow = offset * pageSize
 	}
 
-	jsonResponse, err := json.Marshal(response)
+	endRow := startRow + limit
+	users = users[ startRow: endRow ]
+
+	jsonResponse, err := json.Marshal(users)
 	checkError(err)
 
 	w.WriteHeader(http.StatusOK)
@@ -67,44 +76,64 @@ func SearchServer(w http.ResponseWriter, r *http.Request)  {
 }
 
 
-func TestServer(t *testing.T) {
+func TestErrorResponse(t *testing.T) {
 
-	ts := httptest.NewServer(http.HandlerFunc(SearchServer))
+	ts := httptest.NewServer(http.HandlerFunc(SearchServerSuccess))
+
+	searchClient := &SearchClient{
+		URL: ts.URL,
+	}
+
+	searchRequest := SearchRequest{
+		Limit: 5,
+		Offset: 0,
+	}
+
+	_, err := searchClient.FindUsers(searchRequest)
+
+	if err != nil {
+		t.Error("Dosn't work success request")
+	}
+
+	searchRequest.Limit = -1
+
+	_, err = searchClient.FindUsers(searchRequest)
+	if err.Error() != "limit must be > 0" {
+		t.Error("limit must be > 0")
+	}
+
+	searchRequest.Limit = 1
+	searchRequest.Offset = -1
+	_, err = searchClient.FindUsers(searchRequest)
+	if err.Error() != "offset must be > 0" {
+		t.Error("offset must be > 0")
+	}
+
+	ts.Close()
+}
+
+
+
+func TestLimitFailed(t *testing.T)  {
+	ts := httptest.NewServer(http.HandlerFunc(SearchServerSuccess))
 
 	searchClient := &SearchClient{
 		URL: ts.URL,
 	}
 
 	_, err := searchClient.FindUsers(SearchRequest{
-		Limit: 5,
-		Offset: 0,
-		Query: "Name",
-		OrderField: "Name",
-		OrderBy: 1,
-
+		Offset: 1,
+		Limit: 7,
 	})
 
 	if err != nil {
-		panic(err)
+		t.Error(err.Error())
 	}
 
-	ts.Close()
 }
 
 func checkError(err error)  {
 	if err != nil {
 		panic(err)
 	}
-}
-
-func temp()  {
-	//response, err := http.Get(ts.URL)
-	//checkError(err)
-	//
-	//body, _ := ioutil.ReadAll(response.Body)
-	//
-	//fmt.Println(string(body))
-	//
-	//defer response.Body.Close()
-
 }
